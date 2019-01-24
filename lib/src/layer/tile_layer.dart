@@ -11,6 +11,8 @@ import 'package:latlong/latlong.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:tuple/tuple.dart';
 import 'package:flutter_image/network.dart';
+import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 
 import 'layer.dart';
 
@@ -25,6 +27,13 @@ class TileLayerOptions extends LayerOptions {
   ///
   ///https://a.tile.openstreetmap.org/12/2177/1259.png
   final String urlTemplate;
+
+  //Offline maps for lazy unzip -- if the tile doesn't exist load it up from the archive
+  final Archive archive;
+
+  //how tiles are structured in the archive
+  final Function(String) urlAbsoluteToRelative;
+
   ///Size for the tile.
   ///Default is 256
   final double tileSize;
@@ -76,6 +85,9 @@ class TileLayerOptions extends LayerOptions {
   ///The later requires permissions to read the device files in Android.
   final bool fromAssets;
 
+  //Whether to unzip from given unzip file
+  final bool lazyUncompress;
+
   /// When panning the map, keep this many rows and columns of tiles before
   /// unloading them.
   final int keepBuffer;
@@ -84,6 +96,8 @@ class TileLayerOptions extends LayerOptions {
 
   TileLayerOptions({
     this.urlTemplate,
+    this.archive,
+    this.urlAbsoluteToRelative,
     this.tileSize = 256.0,
     this.maxZoom = 18.0,
     this.zoomReverse = false,
@@ -95,6 +109,7 @@ class TileLayerOptions extends LayerOptions {
     this.placeholderImage,
     this.offlineMode = false,
     this.fromAssets = true,
+    this.lazyUncompress = false,
     rebuild}) : super(rebuild: rebuild);
 }
 
@@ -124,6 +139,7 @@ class _TileLayerState extends State<TileLayer> {
   double _tileZoom;
   Level _level;
   StreamSubscription _moveSub;
+  Archive archive;
 
   Map<String, Tile> _tiles = {};
   Map<double, Level> _levels = {};
@@ -441,15 +457,35 @@ class _TileLayerState extends State<TileLayer> {
     );
   }
 
-  ImageProvider _getImageProvider(String url) {
+  ImageProvider _getImageProvider(String url){
     if (options.offlineMode) {
       if (options.fromAssets) {
+        if(options.lazyUncompress){
+          if(!new File(url).existsSync()){
+            String relativePath = options.urlAbsoluteToRelative(url);
+            _extractFile(options.archive.findFile(relativePath), url);
+            return new AssetImage(url);
+          }
+        }
         return new AssetImage(url);
       } else {
         return new FileImage(new File(url));
       }
     } else {
       return new NetworkImageWithRetry(url);
+    }
+  }
+
+  void _extractFile(ArchiveFile file, String destinationUrl) {
+    if(file != null){
+      if (file.isFile) {
+        List<int> data = file.content;
+        File f = new File(destinationUrl);
+        f.createSync(recursive: true);
+        f.writeAsBytesSync(data);
+      } else {
+        print("WARNING - ${file.name} is a directory!!!! Not creating");
+      }
     }
   }
 

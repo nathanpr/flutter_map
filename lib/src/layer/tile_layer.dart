@@ -463,7 +463,11 @@ class _TileLayerState extends State<TileLayer> {
         if(options.lazyUncompress){
           if(!new File(url).existsSync()){
             String relativePath = options.urlAbsoluteToRelative(url);
-            _extractFile(options.archive.findFile(relativePath), url);
+            if(options.archive != null){
+              _extractFile(options.archive.findFile(relativePath), url);
+            } else {
+              print("Archive is still empty!");
+            }
             return new AssetImage(url);
           }
         }
